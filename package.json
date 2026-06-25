@@ -1,13 +1,25 @@
 {
-  "name": "muslims-app",
+  "name": "muslim-life",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "adhan": "^4.4.3",
     "expo": "~56.0.11",
+    "expo-audio": "~56.0.12",
+    "expo-clipboard": "~56.0.4",
     "expo-constants": "~56.0.18",
+    "expo-file-system": "~56.0.8",
     "expo-font": "~56.0.6",
+    "expo-haptics": "~56.0.3",
+    "expo-linear-gradient": "~56.0.4",
     "expo-linking": "~56.0.14",
+    "expo-location": "~56.0.17",
+    "expo-notifications": "~56.0.18",
     "expo-router": "~56.2.10",
+    "expo-sensors": "~56.0.6",
+    "expo-speech": "~56.0.3",
     "expo-splash-screen": "~56.0.10",
     "expo-status-bar": "~56.0.4",
     "expo-symbols": "~56.0.6",
@@ -27,9 +39,13 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "prebuild:android": "expo prebuild --platform android --clean",
+    "build:android:debug": "expo run:android --variant debug",
+    "build:android:apk": "cd android && ./gradlew assembleRelease",
+    "build:android:eas": "eas build --platform android --profile preview"
   },
   "private": true
 }

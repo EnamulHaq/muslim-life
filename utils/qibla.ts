@@ -1,0 +1,30 @@
+const KAABA_LAT = 21.4225;
+const KAABA_LNG = 39.8262;
+
+export function calculateQiblaDirection(latitude: number, longitude: number): number {
+  const lat1 = (latitude * Math.PI) / 180;
+  const lat2 = (KAABA_LAT * Math.PI) / 180;
+  const diffLng = ((KAABA_LNG - longitude) * Math.PI) / 180;
+
+  const x = Math.sin(diffLng) * Math.cos(lat2);
+  const y = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(diffLng);
+
+  let bearing = (Math.atan2(x, y) * 180) / Math.PI;
+  bearing = (bearing + 360) % 360;
+
+  return bearing;
+}
+
+export function getDistanceToKaaba(latitude: number, longitude: number): number {
+  const R = 6371;
+  const dLat = ((KAABA_LAT - latitude) * Math.PI) / 180;
+  const dLng = ((KAABA_LNG - longitude) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((latitude * Math.PI) / 180) *
+      Math.cos((KAABA_LAT * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}

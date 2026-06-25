@@ -1,56 +1,72 @@
-import { useFonts } from 'expo-font';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { OfflineReadingBootstrap } from '@/components/OfflineReadingBootstrap';
+import { AppThemeProvider, useAppTheme } from '@/context/AppThemeContext';
+import { usePrayerNotifications } from '@/hooks/usePrayerNotifications';
 
-import { useColorScheme } from '@/components/useColorScheme';
-
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: '(tabs)',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
-
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
-
-  if (!loaded) {
-    return null;
-  }
-
-  return <RootLayoutNav />;
+function PrayerNotificationBootstrap() {
+  usePrayerNotifications();
+  return null;
 }
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+function ThemedNavigation() {
+  const { colors, isDark } = useAppTheme();
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+    <>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+        }}
+      >
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="quran/[id]" />
+        <Stack.Screen name="quran/tafsir/[id]" />
+        <Stack.Screen name="features/prayer-times" />
+        <Stack.Screen name="features/nurani-qaida/index" />
+        <Stack.Screen name="features/nurani-qaida/[id]" />
+        <Stack.Screen name="features/hifz" />
+        <Stack.Screen name="features/hadith" />
+        <Stack.Screen name="features/dua" />
+        <Stack.Screen name="features/fitness" />
+        <Stack.Screen name="features/tasbih" />
+        <Stack.Screen name="features/qibla" />
+        <Stack.Screen name="features/zakat" />
+        <Stack.Screen name="features/calendar" />
+        <Stack.Screen name="features/names-of-allah" />
+        <Stack.Screen name="features/hajj" />
+        <Stack.Screen name="features/scholar" />
+        <Stack.Screen name="features/matrimonial" />
       </Stack>
-    </ThemeProvider>
+    </>
+  );
+}
+
+export default function RootLayout() {
+  useEffect(() => {
+    SplashScreen.hideAsync();
+  }, []);
+
+  return (
+    <>
+      <PrayerNotificationBootstrap />
+      <OfflineReadingBootstrap />
+      <AppThemeProvider>
+        <ThemedNavigation />
+      </AppThemeProvider>
+    </>
   );
 }
