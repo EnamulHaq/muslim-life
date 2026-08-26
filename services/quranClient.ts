@@ -1,5 +1,5 @@
 import { QURAN_API_BASE, QURAN_TRANSLATIONS } from '@/constants/quran';
-import { getWordAudioUrl } from '@/constants/audio';
+import { getWordAudioUrl, QURAN_AUDIO_API } from '@/constants/audio';
 import { fetchWithCache } from '@/utils/offlineStore';
 
 type ApiWord = {
@@ -81,6 +81,8 @@ export type QuranVerseView = {
   verseNumber: number;
   verseKey: string;
   arabic: string;
+  arabicIndopak?: string;
+  arabicTajweed?: string;
   english: string;
   bangla: string;
   words: QuranWord[];
@@ -128,16 +130,18 @@ export async function fetchChapterVerses(chapterId: number): Promise<{
   verses: QuranVerseView[];
   chapter: ChapterWithBn | null;
 }> {
-  return fetchWithCache(`quran/chapter/${chapterId}`, () => fetchChapterVersesFromNetwork(chapterId));
+  return fetchWithCache(`quran/v3/chapter/${chapterId}`, () => fetchChapterVersesFromNetwork(chapterId));
 }
 
 async function fetchChapterVersesFromNetwork(chapterId: number): Promise<{
   verses: QuranVerseView[];
   chapter: ChapterWithBn | null;
 }> {
-  const [chapterData, verses] = await Promise.all([
+  const [chapterData, verses, tajweedData, indopakData] = await Promise.all([
     apiGet<{ chapter: ApiChapter }>(`/chapters/${chapterId}?language=en`).catch(() => null),
     fetchAllVerses(chapterId),
+    fetchTajweedVerses(chapterId).catch(() => new Map<number, string>()),
+    fetchIndoPakVerses(chapterId).catch(() => new Map<number, string>()),
   ]);
 
   const chapter = chapterData?.chapter
@@ -164,7 +168,56 @@ async function fetchChapterVersesFromNetwork(chapterId: number): Promise<{
     }
   }
 
-  return { verses, chapter };
+  // Merge Tajweed and IndoPak into verses
+  const mergedVerses = verses.map((verse) => ({
+    ...verse,
+    arabicTajweed: tajweedData.get(verse.verseNumber),
+    arabicIndopak: indopakData.get(verse.verseNumber),
+  }));
+
+  return { verses: mergedVerses, chapter };
+}
+
+async function fetchTajweedVerses(chapterId: number): Promise<Map<number, string>> {
+  const map = new Map<number, string>();
+  try {
+    const res = await fetch(
+      `${QURAN_AUDIO_API}/quran/verses/uthmani_tajweed?chapter_number=${chapterId}&per_page=300`
+    );
+    if (!res.ok) return map;
+    const json = (await res.json()) as {
+      verses: { id: number; verse_key: string; text_uthmani_tajweed: string }[];
+    };
+    json.verses?.forEach((v) => {
+      const parts = v.verse_key.split(':');
+      const vNum = parseInt(parts[1] || '0', 10);
+      if (vNum > 0) map.set(vNum, v.text_uthmani_tajweed);
+    });
+  } catch {
+    // optional fallback
+  }
+  return map;
+}
+
+async function fetchIndoPakVerses(chapterId: number): Promise<Map<number, string>> {
+  const map = new Map<number, string>();
+  try {
+    const res = await fetch(
+      `${QURAN_AUDIO_API}/quran/verses/indopak?chapter_number=${chapterId}&per_page=300`
+    );
+    if (!res.ok) return map;
+    const json = (await res.json()) as {
+      verses: { id: number; verse_key: string; text_indopak: string }[];
+    };
+    json.verses?.forEach((v) => {
+      const parts = v.verse_key.split(':');
+      const vNum = parseInt(parts[1] || '0', 10);
+      if (vNum > 0) map.set(vNum, v.text_indopak);
+    });
+  } catch {
+    // optional fallback
+  }
+  return map;
 }
 
 async function fetchAllVerses(chapterId: number): Promise<QuranVerseView[]> {
@@ -198,10 +251,18 @@ function mapVerse(verse: ApiVerse): QuranVerseView {
     verse.translations?.find((t) => t.language_name === 'bengali')?.text ??
     '';
 
+  const parsedFromKey = verse.verse_key?.includes(':')
+    ? parseInt(verse.verse_key.split(':')[1], 10)
+    : NaN;
+
+  const validVerseNum = !Number.isNaN(parsedFromKey) && parsedFromKey > 0
+    ? parsedFromKey
+    : verse.verse_number;
+
   return {
     id: verse.id,
-    verseNumber: verse.verse_number,
-    verseKey: verse.verse_key,
+    verseNumber: validVerseNum,
+    verseKey: verse.verse_key || `${verse.chapter_id || ''}:${validVerseNum}`,
     arabic: verse.text_uthmani,
     english: cleanTranslation(english),
     bangla: cleanTranslation(bangla),
@@ -218,11 +279,19 @@ function mapWords(words: ApiWord[] | undefined): QuranWord[] {
       position: word.position,
       arabic: word.text_uthmani,
       transliteration: word.transliteration?.text ?? '',
-      translation: word.translation?.text ?? '',
+      translation: cleanTranslation(word.translation?.text ?? ''),
       audioUrl: getWordAudioUrl(word.audio_url!),
     }));
 }
 
-function cleanTranslation(text: string): string {
-  return text.replace(/\s+\d+\s*$/g, '').trim();
+export function cleanTranslation(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/<sup\b[^>]*>.*?<\/sup>/gi, '') // Strip <sup foot_note=195932>1</sup>
+    .replace(/<[^>]+>/g, '') // Strip any remaining HTML tags
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+\d+\s*$/g, '')
+    .trim();
 }

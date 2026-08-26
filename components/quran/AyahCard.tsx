@@ -1,15 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { useState } from 'react';
+import React, { memo, useCallback, useState } from 'react';
 import { Alert, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { RecitationButton } from '@/components/ui/RecitationButton';
 import { Theme } from '@/constants/Theme';
+import { useQuranSettings } from '@/hooks/useQuranSettings';
 import type { QuranVerseView, QuranWord } from '@/services/quranClient';
 import {
   formatAyahShareText,
   formatWordCopyText,
   formatWordShareText,
 } from '@/utils/quranShare';
+import { parseQuranComTajweed } from '@/utils/tajweed';
 
 type Props = {
   verse: QuranVerseView;
@@ -29,7 +31,7 @@ type Props = {
   onReveal?: () => void;
 };
 
-export function AyahCard({
+export const AyahCard = memo(function AyahCard({
   verse,
   surahNumber,
   surahName,
@@ -46,25 +48,34 @@ export function AyahCard({
   onToggleMemorized,
   onReveal,
 }: Props) {
+  const { quranSettings } = useQuranSettings();
   const [selectedWord, setSelectedWord] = useState<QuranWord | null>(null);
   const verseId = `verse-${surahNumber}-${verse.verseNumber}`;
 
-  const handleWordPress = (word: QuranWord) => {
-    setSelectedWord(word);
-    const wordId = `word-${surahNumber}-${verse.verseNumber}-${word.position}`;
-    onPlayWord(wordId, word.audioUrl, word.position);
-  };
+  const { scriptType, showTajweedRules, fontSize, copyAsGlyphs } = quranSettings;
+  const arabicFontSize = 24 + (fontSize - 1) * 3;
+  const arabicLineHeight = arabicFontSize * 1.6;
 
-  const copyAyah = async () => {
+  const handleWordPress = useCallback((word: QuranWord) => {
+    if (selectedWord?.position === word.position) {
+      setSelectedWord(null);
+    } else {
+      setSelectedWord(word);
+      const wordId = `word-${surahNumber}-${verse.verseNumber}-${word.position}`;
+      onPlayWord(wordId, word.audioUrl, word.position);
+    }
+  }, [selectedWord, surahNumber, verse.verseNumber, onPlayWord]);
+
+  const copyAyah = useCallback(async () => {
     const text = formatAyahShareText(verse, surahName, surahNumber);
     await Clipboard.setStringAsync(text);
     Alert.alert('Copied', 'Ayah copied to clipboard');
-  };
+  }, [verse, surahName, surahNumber]);
 
-  const shareAyah = async () => {
+  const shareAyah = useCallback(async () => {
     const text = formatAyahShareText(verse, surahName, surahNumber);
     await Share.share({ message: text });
-  };
+  }, [verse, surahName, surahNumber]);
 
   const copyWord = async (word: QuranWord) => {
     await Clipboard.setStringAsync(formatWordCopyText(word));
@@ -83,7 +94,9 @@ export function AyahCard({
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.ayahBadge}>
-              <Text style={styles.ayahNumber}>{verse.verseNumber}</Text>
+              <Text style={styles.ayahNumber}>
+                {verse.verseKey || `${surahNumber}:${verse.verseNumber}`}
+              </Text>
             </View>
             {onToggleMemorized ? (
               <Pressable onPress={onToggleMemorized} hitSlop={8}>
@@ -111,7 +124,9 @@ export function AyahCard({
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={styles.ayahBadge}>
-            <Text style={styles.ayahNumber}>{verse.verseNumber}</Text>
+            <Text style={styles.ayahNumber}>
+              {verse.verseKey || `${surahNumber}:${verse.verseNumber}`}
+            </Text>
           </View>
           {isHifzMode && onToggleMemorized ? (
             <Pressable onPress={onToggleMemorized} hitSlop={8}>
@@ -145,8 +160,58 @@ export function AyahCard({
         </View>
       </View>
 
-      {hasWords ? (
-        <Text style={styles.arabicFlow}>
+      {/* Floating Word Tooltip (like Quran.com) */}
+      {selectedWord && (
+        <View style={styles.tooltipContainer}>
+          <View style={styles.tooltipBubble}>
+            <Text style={styles.tooltipTranslation}>
+              {selectedWord.translation || selectedWord.transliteration}
+            </Text>
+          </View>
+          <View style={styles.tooltipArrow} />
+        </View>
+      )}
+
+      {/* Arabic Flow */}
+      {scriptType === 'tajweed' && showTajweedRules ? (
+        <Text
+          style={[
+            styles.arabicFlow,
+            { fontSize: arabicFontSize, lineHeight: arabicLineHeight },
+          ]}
+        >
+          {parseQuranComTajweed(verse.arabicTajweed || verse.arabic).map((seg, idx) =>
+            seg.isEndMarker ? (
+              <Text key={idx} style={styles.verseEndMarker}>
+                {' '}﴿{seg.endNumber}﴾
+              </Text>
+            ) : (
+              <Text
+                key={idx}
+                style={seg.color ? { color: seg.color } : { color: Theme.colors.text }}
+              >
+                {seg.text}
+              </Text>
+            )
+          )}
+        </Text>
+      ) : scriptType === 'indopak' ? (
+        <Text
+          style={[
+            styles.arabicFlow,
+            styles.indopakFlow,
+            { fontSize: arabicFontSize, lineHeight: arabicLineHeight },
+          ]}
+        >
+          {verse.arabicIndopak || verse.arabic}
+        </Text>
+      ) : hasWords ? (
+        <Text
+          style={[
+            styles.arabicFlow,
+            { fontSize: arabicFontSize, lineHeight: arabicLineHeight },
+          ]}
+        >
           {verse.words.map((word, index) => {
             const isActive =
               activeWordPosition === word.position ||
@@ -156,7 +221,11 @@ export function AyahCard({
               <Text
                 key={word.position}
                 onPress={() => handleWordPress(word)}
-                style={[styles.arabicWord, isActive && styles.arabicWordActive]}
+                style={[
+                  styles.arabicWord,
+                  { fontSize: arabicFontSize, lineHeight: arabicLineHeight },
+                  isActive && styles.arabicWordActive,
+                ]}
               >
                 {word.arabic}
                 {index < verse.words.length - 1 ? ' ' : ''}
@@ -165,13 +234,21 @@ export function AyahCard({
           })}
         </Text>
       ) : (
-        <Text style={styles.arabicFlow}>{verse.arabic}</Text>
+        <Text
+          style={[
+            styles.arabicFlow,
+            { fontSize: arabicFontSize, lineHeight: arabicLineHeight },
+          ]}
+        >
+          {verse.arabic}
+        </Text>
       )}
 
+      {/* Word Detail Panel */}
       {selectedWord ? (
         <View style={styles.wordPanel}>
           <View style={styles.wordPanelHeader}>
-            <Text style={styles.wordPanelLabel}>Word meaning</Text>
+            <Text style={styles.wordPanelLabel}>Word Meaning</Text>
             <Pressable onPress={() => setSelectedWord(null)} hitSlop={8}>
               <Ionicons name="close" size={18} color={Theme.colors.textSecondary} />
             </Pressable>
@@ -216,7 +293,7 @@ export function AyahCard({
       {verse.english ? <Text style={styles.english}>{verse.english}</Text> : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {
@@ -253,35 +330,70 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.background,
   },
   ayahBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: Theme.borderRadius.full,
-    backgroundColor: Theme.colors.primary,
+    minWidth: 44,
+    height: 28,
+    paddingHorizontal: 8,
+    borderRadius: Theme.borderRadius.sm,
+    backgroundColor: Theme.colors.primary + '15',
     alignItems: 'center',
     justifyContent: 'center',
   },
   ayahNumber: {
-    color: Theme.colors.textLight,
-    fontSize: Theme.fontSize.sm,
+    color: Theme.colors.primary,
+    fontSize: Theme.fontSize.xs,
     fontWeight: '700',
   },
+  tooltipContainer: {
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  tooltipBubble: {
+    backgroundColor: '#2CA4AB',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  tooltipTranslation: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  tooltipArrow: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 5,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#2CA4AB',
+  },
   arabicFlow: {
-    fontSize: Theme.fontSize.arabicLarge,
     color: Theme.colors.text,
     textAlign: 'right',
     writingDirection: 'rtl',
-    lineHeight: 48,
     marginBottom: Theme.spacing.md,
   },
+  indopakFlow: {
+    fontWeight: '600',
+  },
   arabicWord: {
-    fontSize: Theme.fontSize.arabicLarge,
     color: Theme.colors.text,
-    lineHeight: 48,
   },
   arabicWordActive: {
-    color: Theme.colors.primary,
-    backgroundColor: Theme.colors.primary + '18',
+    color: '#2CA4AB',
+    backgroundColor: 'rgba(44, 164, 171, 0.18)',
     borderRadius: 4,
+  },
+  tajweedWord: {
+    color: '#0F766E',
+  },
+  verseEndMarker: {
+    color: Theme.colors.primary,
+    fontSize: 16,
+    opacity: 0.7,
   },
   wordPanel: {
     backgroundColor: Theme.colors.primary + '08',

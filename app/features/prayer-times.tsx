@@ -1,13 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Header } from '@/components/ui/Header';
 import { PrayerCard } from '@/components/ui/PrayerCard';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { SectionHeading } from '@/components/ui/SectionHeading';
 import { FORBIDDEN_TIMES, SALAH_GUIDE } from '@/data/salatGuide';
 import { Theme } from '@/constants/Theme';
-import { ASR_METHODS, CALCULATION_METHODS, useAppSettings } from '@/hooks/useAppSettings';
+import {
+  ASR_METHODS,
+  CALCULATION_METHODS,
+  useAppSettings,
+  type AsrMethodKey,
+  type CalculationMethodKey,
+} from '@/hooks/useAppSettings';
 import { useLocation } from '@/hooks/useLocation';
 import { usePrayerTimes } from '@/hooks/usePrayerTimes';
 import {
@@ -18,6 +24,7 @@ import {
   getHijriDate,
   isInForbiddenTime,
 } from '@/utils/prayerTimes';
+import { scheduleOfflinePrayerAlarms } from '@/services/prayerNotifications';
 
 type Tab = 'times' | 'guide' | 'forbidden';
 
@@ -30,7 +37,8 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function PrayerTimesScreen() {
   const [tab, setTab] = useState<Tab>('times');
-  const { settings } = useAppSettings();
+  const [isSyncing, setIsSyncing] = useState(false);
+  const { settings, updateSettings } = useAppSettings();
   const { location } = useLocation();
   const { prayers, nextPrayer } = usePrayerTimes(location.latitude, location.longitude);
 
@@ -39,6 +47,30 @@ export default function PrayerTimesScreen() {
   const fardWindows = getFardPrayerWindows(prayers);
   const forbiddenWindows = getForbiddenTimeWindows(prayers);
   const extra = getComputedSalahTimes(prayers);
+
+  const handleSyncOffline = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Offline Mode', 'Offline alarm push is supported on Android and iOS.');
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const res = await scheduleOfflinePrayerAlarms(
+        location.latitude,
+        location.longitude,
+        settings,
+        14
+      );
+      Alert.alert(
+        'Offline Alarms Ready',
+        `Scheduled ${res.scheduledCount} real-time prayer & Tahajjud alarms for the next 14 days!`
+      );
+    } catch {
+      Alert.alert('Error', 'Failed to schedule offline alarms.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   return (
     <View style={styles.wrapper}>
@@ -52,14 +84,33 @@ export default function PrayerTimesScreen() {
             {hijri.day} {hijri.monthBn} {hijri.year} হিজরি
           </Text>
           <Text style={styles.method}>
-            {CALCULATION_METHODS[settings.calculationMethod]} · {ASR_METHODS[settings.asrMethod]} Asr
+            {CALCULATION_METHODS[settings.calculationMethod as CalculationMethodKey] ?? ''} · {ASR_METHODS[settings.asrMethod as AsrMethodKey] ?? ''} Asr
           </Text>
-          {settings.prayerNotifications ? (
-            <View style={styles.alertOn}>
-              <Ionicons name="notifications" size={14} color={Theme.colors.success} />
-              <Text style={styles.alertOnText}>Prayer alerts enabled</Text>
+
+          {/* Alarm Status Pills */}
+          <View style={styles.alarmStatusRow}>
+            <View style={styles.alarmPill}>
+              <Ionicons name="alarm" size={14} color={Theme.colors.accent} />
+              <Text style={styles.alarmPillText}>
+                Tahajjud: {settings.tahajjudAlarm ? `On (${settings.tahajjudOffsetMinutes ?? 45}m pre-Fajr)` : 'Off'}
+              </Text>
             </View>
-          ) : null}
+            <View style={styles.alarmPill}>
+              <Ionicons name="sunny" size={14} color={Theme.colors.primary} />
+              <Text style={styles.alarmPillText}>
+                Fajr Alarm: {settings.fajrAlarm ? 'On' : 'Off'}
+              </Text>
+            </View>
+          </View>
+
+          {/* 30-day Automatic Offline Alarms Badge */}
+          <View style={styles.autoStatusWrap}>
+            <Ionicons name="checkmark-circle" size={16} color={Theme.colors.success} />
+            <Text style={styles.autoStatusText}>
+              Offline Alarms Active: 30 days automatically scheduled with Adhan & Tahajjud
+            </Text>
+          </View>
+
           {forbiddenNow ? (
             <View style={styles.forbiddenNow}>
               <Ionicons name="warning" size={16} color={Theme.colors.error} />
@@ -189,13 +240,45 @@ const styles = StyleSheet.create({
   location: { fontSize: Theme.fontSize.lg, fontWeight: '600', color: Theme.colors.text },
   hijri: { fontSize: Theme.fontSize.md, color: Theme.colors.primary, marginTop: 4 },
   method: { fontSize: Theme.fontSize.xs, color: Theme.colors.textSecondary, marginTop: Theme.spacing.sm },
-  alertOn: {
+  alarmStatusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: Theme.spacing.sm,
+  },
+  alarmPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: Theme.spacing.sm,
+    backgroundColor: Theme.colors.primary + '10',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: Theme.borderRadius.full,
   },
-  alertOnText: { fontSize: Theme.fontSize.xs, color: Theme.colors.success, fontWeight: '600' },
+  alarmPillText: {
+    fontSize: Theme.fontSize.xs,
+    color: Theme.colors.text,
+    fontWeight: '500',
+  },
+  autoStatusWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderRadius: Theme.borderRadius.md,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: 8,
+    marginTop: Theme.spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  autoStatusText: {
+    fontSize: Theme.fontSize.xs,
+    fontWeight: '600',
+    color: Theme.colors.text,
+    flex: 1,
+    lineHeight: 18,
+  },
   forbiddenNow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -18,6 +18,7 @@ export function ScreenContainer({ children, scroll = true, style, contentStyle }
         style={[styles.container, { backgroundColor: colors.background }, style]}
         contentContainerStyle={[styles.content, contentStyle]}
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
       >
         {children}
       </ScrollView>

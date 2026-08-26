@@ -3,6 +3,7 @@ import { Alert, Linking, Platform, Pressable, StyleSheet, Switch, Text, View } f
 import { Header } from '@/components/ui/Header';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { SettingPicker } from '@/components/ui/SettingPicker';
+import { QuranSettingsSheet } from '@/components/quran/QuranSettingsSheet';
 import { useAppTheme } from '@/context/AppThemeContext';
 import { Theme } from '@/constants/Theme';
 import {
@@ -14,20 +15,35 @@ import {
   type AsrMethodKey,
   type CalculationMethodKey,
 } from '@/hooks/useAppSettings';
+import { useLocation } from '@/hooks/useLocation';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
-import { requestNotificationPermission } from '@/services/prayerNotifications';
+import { useQuranSettings } from '@/hooks/useQuranSettings';
+import {
+  requestNotificationPermission,
+  scheduleOfflinePrayerAlarms,
+} from '@/services/prayerNotifications';
 import { useLabels } from '@/utils/labels';
 import { shadowStyle } from '@/utils/shadow';
 import { useState } from 'react';
 
-type PickerKey = 'language' | 'calculation' | 'asr' | null;
+type PickerKey = 'language' | 'calculation' | 'asr' | 'tahajjudOffset' | null;
+
+const TAHAJJUD_OFFSETS: Record<string, string> = {
+  '30': '30 Minutes before Fajr',
+  '45': '45 Minutes before Fajr',
+  '60': '60 Minutes before Fajr',
+};
 
 export default function SettingsScreen() {
   const { settings, updateSettings } = useAppSettings();
   const { syncState, meta, ready, startSync } = useOfflineSync();
+  const { location } = useLocation();
+  const { activeReciter, quranSettings } = useQuranSettings();
   const { colors } = useAppTheme();
   const { t } = useLabels();
   const [picker, setPicker] = useState<PickerKey>(null);
+  const [showQuranSettings, setShowQuranSettings] = useState(false);
+  const [isSyncingAlarms, setIsSyncingAlarms] = useState(false);
 
   const syncPercent =
     syncState.status === 'running' && syncState.total > 0
@@ -43,6 +59,36 @@ export default function SettingsScreen() {
       }
     }
     await updateSettings({ prayerNotifications: value });
+    if (value && location.latitude && location.longitude) {
+      await scheduleOfflinePrayerAlarms(location.latitude, location.longitude, {
+        ...settings,
+        prayerNotifications: value,
+      }, 14);
+    }
+  };
+
+  const handleSyncOfflineAlarms = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Offline Alarms', 'Offline push notifications are supported on Android and iOS devices.');
+      return;
+    }
+    setIsSyncingAlarms(true);
+    try {
+      const res = await scheduleOfflinePrayerAlarms(
+        location.latitude,
+        location.longitude,
+        settings,
+        14
+      );
+      Alert.alert(
+        'Alarms Scheduled',
+        `Successfully calculated and scheduled ${res.scheduledCount} prayer & Tahajjud alarms for the next 14 days offline!`
+      );
+    } catch (e) {
+      Alert.alert('Error', 'Could not schedule offline alarms.');
+    } finally {
+      setIsSyncingAlarms(false);
+    }
   };
 
   return (
@@ -59,6 +105,26 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* QURAN & AUDIO SETTINGS */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>AL-QURAN & RECITATION</Text>
+        <Pressable
+          style={[styles.offlineCard, { backgroundColor: colors.surface, borderColor: colors.primary + '35' }, cardShadow(colors)]}
+          onPress={() => setShowQuranSettings(true)}
+        >
+          <View style={[styles.iconWrap, { backgroundColor: colors.primary + '14' }]}>
+            <Ionicons name="book-outline" size={24} color={colors.primary} />
+          </View>
+          <View style={styles.flex}>
+            <Text style={[styles.rowTitle, { color: colors.text }]}>Quran Script, Font & Reciter</Text>
+            <Text style={[styles.rowDesc, { color: colors.textSecondary }]}>
+              {quranSettings.scriptType.toUpperCase()} ({quranSettings.fontStyle}) · {activeReciter.name}
+            </Text>
+            <Text style={[styles.rowValue, { color: colors.primary }]}>Tap to customize appearance</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+        </Pressable>
+
+        {/* OFFLINE READING SYNC */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('offlineReading').toUpperCase()}</Text>
         <Pressable
           style={[styles.offlineCard, { backgroundColor: colors.surface, borderColor: colors.primary + '35' }, cardShadow(colors)]}
@@ -88,46 +154,80 @@ export default function SettingsScreen() {
           )}
         </Pressable>
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('prayerSection').toUpperCase()}</Text>
+        {/* PRAYER TIMES & ALARMS */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PRAYER ALARMS & ADHAN (OFFLINE)</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }, cardShadow(colors)]}>
           <SettingToggle
             icon="notifications-outline"
             title={t('prayerNotifications')}
-            description={t('prayerNotificationsDesc')}
+            description="Automatic real-time alerts for all 5 prayers"
             value={settings.prayerNotifications}
             onChange={handlePrayerNotifications}
           />
           <Divider color={colors.border} />
           <SettingToggle
+            icon="alarm-outline"
+            title="Tahajjud Night Alarm"
+            description={`Automatic alarm before Fajr (${settings.tahajjudOffsetMinutes ?? 45}m before)`}
+            value={settings.tahajjudAlarm ?? true}
+            onChange={(v) => updateSettings({ tahajjudAlarm: v })}
+            disabled={!settings.prayerNotifications}
+          />
+          <Divider color={colors.border} />
+          <SettingNav
+            icon="time-outline"
+            title="Tahajjud Alarm Time"
+            value={TAHAJJUD_OFFSETS[String(settings.tahajjudOffsetMinutes ?? 45)] ?? '45 Minutes before Fajr'}
+            onPress={() => setPicker('tahajjudOffset')}
+          />
+          <Divider color={colors.border} />
+          <SettingToggle
+            icon="sunny-outline"
+            title="Fajr Wakeup Alarm"
+            description="Loud wakeup alarm and Adhan for Fajr"
+            value={settings.fajrAlarm ?? true}
+            onChange={(v) => updateSettings({ fajrAlarm: v })}
+            disabled={!settings.prayerNotifications}
+          />
+          <Divider color={colors.border} />
+          <SettingToggle
             icon="volume-high-outline"
             title={t('adhanSound')}
-            description={t('adhanSoundDesc')}
+            description="Play Adhan audio sound on prayer times"
             value={settings.adhanSound}
             onChange={(v) => updateSettings({ adhanSound: v })}
             disabled={!settings.prayerNotifications}
           />
           <Divider color={colors.border} />
+          <View style={styles.autoOfflineRow}>
+            <Ionicons name="checkmark-circle" size={18} color={Theme.colors.success} />
+            <Text style={[styles.autoOfflineText, { color: colors.text }]}>
+              Offline Alarms: Auto-active (30 days scheduled automatically, no download needed)
+            </Text>
+          </View>
+          <Divider color={colors.border} />
           <SettingNav
             icon="calculator-outline"
             title={t('calculationMethod')}
-            value={CALCULATION_METHODS[settings.calculationMethod]}
+            value={CALCULATION_METHODS[settings.calculationMethod as CalculationMethodKey] ?? ''}
             onPress={() => setPicker('calculation')}
           />
           <Divider color={colors.border} />
           <SettingNav
             icon="compass-outline"
             title={t('asrMethod')}
-            value={ASR_METHODS[settings.asrMethod]}
+            value={ASR_METHODS[settings.asrMethod as AsrMethodKey] ?? ''}
             onPress={() => setPicker('asr')}
           />
         </View>
 
+        {/* APP SETTINGS */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('appSection').toUpperCase()}</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }, cardShadow(colors)]}>
           <SettingNav
             icon="language-outline"
             title={t('language')}
-            value={LANGUAGES[settings.language]}
+            value={LANGUAGES[settings.language as AppLanguage] ?? ''}
             onPress={() => setPicker('language')}
           />
           <Divider color={colors.border} />
@@ -140,6 +240,7 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {/* SUPPORT */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>{t('supportSection').toUpperCase()}</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }, cardShadow(colors)]}>
           <SettingNav
@@ -168,6 +269,7 @@ export default function SettingsScreen() {
         </View>
       </ScreenContainer>
 
+      {/* Pickers */}
       <SettingPicker
         visible={picker === 'language'}
         title={t('language')}
@@ -191,6 +293,20 @@ export default function SettingsScreen() {
         selected={settings.asrMethod}
         onSelect={(asrMethod: AsrMethodKey) => updateSettings({ asrMethod })}
         onClose={() => setPicker(null)}
+      />
+      <SettingPicker
+        visible={picker === 'tahajjudOffset'}
+        title="Tahajjud Alarm Time"
+        options={TAHAJJUD_OFFSETS}
+        selected={String(settings.tahajjudOffsetMinutes ?? 45)}
+        onSelect={(val: string) => updateSettings({ tahajjudOffsetMinutes: parseInt(val, 10) })}
+        onClose={() => setPicker(null)}
+      />
+
+      {/* Quran Appearance Sheet */}
+      <QuranSettingsSheet
+        visible={showQuranSettings}
+        onClose={() => setShowQuranSettings(false)}
       />
     </View>
   );
@@ -339,4 +455,17 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', borderRadius: Theme.borderRadius.full },
   percent: { fontSize: Theme.fontSize.sm, fontWeight: '700' },
   errorText: { fontSize: Theme.fontSize.xs, marginTop: 6 },
+  autoOfflineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Theme.spacing.md,
+    gap: Theme.spacing.sm,
+    backgroundColor: 'rgba(34, 197, 94, 0.08)',
+  },
+  autoOfflineText: {
+    fontSize: Theme.fontSize.xs,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 18,
+  },
 });

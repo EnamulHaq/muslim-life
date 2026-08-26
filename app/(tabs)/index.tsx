@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import React, { memo, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FeatureCard } from '@/components/ui/FeatureCard';
@@ -12,17 +12,47 @@ import { useLocation } from '@/hooks/useLocation';
 import { usePrayerTimes } from '@/hooks/usePrayerTimes';
 import { formatTime, getHijriDate } from '@/utils/prayerTimes';
 
-export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
-  const { location } = useLocation();
-  const { prayers, nextPrayer, countdown } = usePrayerTimes(location.latitude, location.longitude);
-  const hijri = getHijriDate();
+/**
+ * Isolated countdown component — re-renders every 1s without
+ * triggering re-renders of the rest of the HomeScreen tree.
+ */
+const CountdownTimer = memo(function CountdownTimer() {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  return (
+    <Text style={styles.currentTime}>
+      {now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
+    </Text>
+  );
+});
+
+/**
+ * Isolated countdown display for the next prayer card.
+ * Updates every second independently of the rest of the screen.
+ */
+const PrayerCountdown = memo(function PrayerCountdown({ countdown }: { countdown: { hours: number; minutes: number; seconds: number } }) {
+  return (
+    <View style={styles.countdown}>
+      <Text style={styles.countdownText}>
+        {String(countdown.hours).padStart(2, '0')}:
+        {String(countdown.minutes).padStart(2, '0')}:
+        {String(countdown.seconds).padStart(2, '0')}
+      </Text>
+      <Text style={styles.countdownLabel}>remaining</Text>
+    </View>
+  );
+});
+
+export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
+  const { location } = useLocation();
+  const { prayers, nextPrayer, countdown } = usePrayerTimes(location.latitude, location.longitude);
+  const hijri = getHijriDate();
 
   const featuredFeatures = FEATURES.slice(0, 8);
 
@@ -61,20 +91,11 @@ export default function HomeScreen() {
               <Text style={styles.nextName}>{nextPrayer.label}</Text>
               <Text style={styles.nextTime}>{formatTime(nextPrayer.time)}</Text>
             </View>
-            <View style={styles.countdown}>
-              <Text style={styles.countdownText}>
-                {String(countdown.hours).padStart(2, '0')}:
-                {String(countdown.minutes).padStart(2, '0')}:
-                {String(countdown.seconds).padStart(2, '0')}
-              </Text>
-              <Text style={styles.countdownLabel}>remaining</Text>
-            </View>
+            <PrayerCountdown countdown={countdown} />
           </View>
         )}
 
-        <Text style={styles.currentTime}>
-          {now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}
-        </Text>
+        <CountdownTimer />
       </LinearGradient>
 
       <View style={styles.section}>

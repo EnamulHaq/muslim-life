@@ -1,6 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
-import { isStorageAvailable } from '@/utils/storage';
+import { isStorageAvailable, safeGetItem, safeSetItem } from '@/utils/storage';
 
 export type AppLanguage = 'bn' | 'en';
 export type CalculationMethodKey =
@@ -17,6 +16,18 @@ export type AppSettings = {
   asrMethod: AsrMethodKey;
   prayerNotifications: boolean;
   adhanSound: boolean;
+  fajrAlarm: boolean;
+  tahajjudAlarm: boolean;
+  tahajjudOffsetMinutes: number; // e.g., 45 minutes before Fajr
+  prayerAlerts: {
+    fajr: boolean;
+    dhuhr: boolean;
+    asr: boolean;
+    maghrib: boolean;
+    isha: boolean;
+    tahajjud: boolean;
+    sunrise: boolean;
+  };
   darkMode: boolean;
 };
 
@@ -28,6 +39,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
   asrMethod: 'Hanafi',
   prayerNotifications: true,
   adhanSound: true,
+  fajrAlarm: true,
+  tahajjudAlarm: true,
+  tahajjudOffsetMinutes: 45,
+  prayerAlerts: {
+    fajr: true,
+    dhuhr: true,
+    asr: true,
+    maghrib: true,
+    isha: true,
+    tahajjud: true,
+    sunrise: false,
+  },
   darkMode: false,
 };
 
@@ -71,7 +94,7 @@ export function useAppSettings() {
       };
     }
 
-    AsyncStorage.getItem(STORAGE_KEY)
+    safeGetItem(STORAGE_KEY)
       .then((raw) => {
         if (raw) {
           cachedSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
@@ -90,7 +113,7 @@ export function useAppSettings() {
     setSettings(cachedSettings);
     notifyListeners();
     if (isStorageAvailable()) {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cachedSettings));
+      await safeSetItem(STORAGE_KEY, JSON.stringify(cachedSettings));
     }
   }, []);
 

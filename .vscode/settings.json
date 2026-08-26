@@ -3,5 +3,17 @@
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
-  }
+  },
+  "java.project.resourceFilters": [
+    "node_modules",
+    "**/.git",
+    "**/build"
+  ],
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/build/**"
+  ],
+  "java.autobuild.enabled": false,
+  "java.configuration.updateBuildConfiguration": "interactive"
 }

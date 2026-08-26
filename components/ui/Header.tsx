@@ -21,7 +21,7 @@ export function Header({ title, subtitle, showBack = false, onBack, rightAction 
       colors={[Theme.colors.gradientStart, Theme.colors.gradientEnd]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={[styles.container, { paddingTop: insets.top + Theme.spacing.sm }]}
+      style={[styles.container, { paddingTop: Math.max(insets.top, 16) + Theme.spacing.sm }]}
     >
       <View style={styles.row}>
         {showBack ? (

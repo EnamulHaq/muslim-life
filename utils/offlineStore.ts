@@ -1,9 +1,12 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
+import { safeGetItem, safeSetItem } from './storage';
 
 const CACHE_DIR_NAME = 'reading-cache';
 const META_KEY = '@muslim-life/offline-sync-meta';
+
+// In-memory cache for Web to prevent hitting browser 5MB localStorage quota
+const memoryCache = new Map<string, any>();
 
 export type OfflineSyncMeta = {
   completedAt?: string;
@@ -49,22 +52,36 @@ export async function readCache<T>(key: string): Promise<T | null> {
       const raw = await FileSystem.readAsStringAsync(path);
       return JSON.parse(raw) as T;
     }
-    const raw = await AsyncStorage.getItem(`reading:${key}`);
-    return raw ? (JSON.parse(raw) as T) : null;
+    // Web / in-memory fallback
+    if (memoryCache.has(key)) {
+      return memoryCache.get(key) as T;
+    }
+    const raw = await safeGetItem(`reading:${key}`);
+    if (raw) {
+      const parsed = JSON.parse(raw) as T;
+      memoryCache.set(key, parsed);
+      return parsed;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
 export async function writeCache<T>(key: string, data: T): Promise<void> {
-  const raw = JSON.stringify(data);
   const dir = getCacheDir();
   if (dir) {
+    const raw = JSON.stringify(data);
     await ensureCacheDir();
     await FileSystem.writeAsStringAsync(cacheFilePath(key), raw);
     return;
   }
-  await AsyncStorage.setItem(`reading:${key}`, raw);
+  // On Web, store in memory and selectively in storage
+  memoryCache.set(key, data);
+  if (Platform.OS !== 'web') {
+    const raw = JSON.stringify(data);
+    await safeSetItem(`reading:${key}`, raw);
+  }
 }
 
 export async function hasCache(key: string): Promise<boolean> {
@@ -74,7 +91,8 @@ export async function hasCache(key: string): Promise<boolean> {
       const info = await FileSystem.getInfoAsync(cacheFilePath(key));
       return info.exists;
     }
-    return (await AsyncStorage.getItem(`reading:${key}`)) !== null;
+    if (memoryCache.has(key)) return true;
+    return (await safeGetItem(`reading:${key}`)) !== null;
   } catch {
     return false;
   }
@@ -94,7 +112,7 @@ export async function fetchWithCache<T>(key: string, fetcher: () => Promise<T>):
 
 export async function readSyncMeta(): Promise<OfflineSyncMeta> {
   try {
-    const raw = await AsyncStorage.getItem(META_KEY);
+    const raw = await safeGetItem(META_KEY);
     if (raw) return { ...DEFAULT_META, ...JSON.parse(raw) };
   } catch {
     // ignore
@@ -103,7 +121,7 @@ export async function readSyncMeta(): Promise<OfflineSyncMeta> {
 }
 
 export async function writeSyncMeta(meta: OfflineSyncMeta): Promise<void> {
-  await AsyncStorage.setItem(META_KEY, JSON.stringify(meta));
+  await safeSetItem(META_KEY, JSON.stringify(meta));
 }
 
 export function isOfflineReady(meta: OfflineSyncMeta): boolean {

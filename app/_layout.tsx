@@ -4,7 +4,9 @@ import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { OfflineReadingBootstrap } from '@/components/OfflineReadingBootstrap';
+import { AppUpdateModal } from '@/components/ui/AppUpdateModal';
 import { AppThemeProvider, useAppTheme } from '@/context/AppThemeContext';
+import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { usePrayerNotifications } from '@/hooks/usePrayerNotifications';
 
 export { ErrorBoundary } from 'expo-router';
@@ -14,6 +16,19 @@ export const unstable_settings = {
 };
 
 SplashScreen.preventAutoHideAsync();
+
+function AppUpdateBootstrap() {
+  const { showModal, updateInfo, handleUpdate, handleDismiss } = useAppUpdate();
+
+  return (
+    <AppUpdateModal
+      visible={showModal}
+      updateInfo={updateInfo}
+      onUpdate={handleUpdate}
+      onDismiss={handleDismiss}
+    />
+  );
+}
 
 function PrayerNotificationBootstrap() {
   usePrayerNotifications();
@@ -64,6 +79,7 @@ export default function RootLayout() {
     <>
       <PrayerNotificationBootstrap />
       <OfflineReadingBootstrap />
+      <AppUpdateBootstrap />
       <AppThemeProvider>
         <ThemedNavigation />
       </AppThemeProvider>
