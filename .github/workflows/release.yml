@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Android Release APK
@@ -34,8 +37,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Make Gradlew Executable
-        run: chmod +x android/gradlew
+      - name: Ensure Android Project
+        run: |
+          if [ ! -d "android" ]; then
+            npx expo prebuild --platform android --no-install
+          fi
+          chmod +x android/gradlew
 
       - name: Build Android Release APK
         run: |
