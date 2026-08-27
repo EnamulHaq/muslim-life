@@ -44,48 +44,79 @@ export async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
   try {
     const currentVersion =
       Constants.expoConfig?.version ||
+      (Constants as any).nativeAppVersion ||
       Constants.manifest2?.extra?.expoClient?.version ||
       '1.0.0';
 
-    const response = await fetch(GITHUB_RELEASES_API, {
-      headers: {
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'MuslimLife-App',
-      },
-    });
+    // 1. Primary: Try GitHub Releases API
+    try {
+      const response = await fetch(GITHUB_RELEASES_API, {
+        headers: {
+          Accept: 'application/vnd.github.v3+json',
+          'User-Agent': 'MuslimLife-App',
+        },
+      });
 
-    if (!response.ok) return null;
+      if (response.ok) {
+        const data = await response.json();
+        const rawTag: string = data.tag_name || data.name || '';
+        const latestVersion = rawTag.replace(/^[vV]/, '').trim();
 
-    const data = await response.json();
-    const rawTag: string = data.tag_name || data.name || '';
-    const latestVersion = rawTag.replace(/^[vV]/, '').trim();
+        if (latestVersion) {
+          const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
+          let apkDownloadUrl: string | null = null;
+          if (Array.isArray(data.assets)) {
+            const apkAsset = data.assets.find(
+              (asset: { name: string; browser_download_url: string }) =>
+                asset.name.endsWith('.apk')
+            );
+            if (apkAsset) {
+              apkDownloadUrl = apkAsset.browser_download_url;
+            }
+          }
 
-    if (!latestVersion) return null;
-
-    const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
-
-    // Find the APK asset in the release
-    let apkDownloadUrl: string | null = null;
-    if (Array.isArray(data.assets)) {
-      const apkAsset = data.assets.find(
-        (asset: { name: string; browser_download_url: string }) =>
-          asset.name.endsWith('.apk')
-      );
-      if (apkAsset) {
-        apkDownloadUrl = apkAsset.browser_download_url;
+          return {
+            hasUpdate,
+            latestVersion,
+            currentVersion,
+            releaseTitle: data.name || `Version ${latestVersion}`,
+            releaseNotes: data.body || 'Bug fixes and performance improvements.',
+            apkDownloadUrl,
+            htmlUrl: data.html_url || `https://github.com/${GITHUB_REPO}/releases`,
+            publishedAt: data.published_at || '',
+          };
+        }
       }
+    } catch {
+      // Fallback below
     }
 
-    return {
-      hasUpdate,
-      latestVersion,
-      currentVersion,
-      releaseTitle: data.name || `Version ${latestVersion}`,
-      releaseNotes: data.body || 'Bug fixes and performance improvements.',
-      apkDownloadUrl,
-      htmlUrl: data.html_url || `https://github.com/${GITHUB_REPO}/releases`,
-      publishedAt: data.published_at || '',
-    };
+    // 2. Secondary Fallback: raw.githubusercontent.com / version.json
+    try {
+      const fallbackRes = await fetch(
+        `https://raw.githubusercontent.com/${GITHUB_REPO}/main/version.json?t=${Date.now()}`
+      );
+      if (fallbackRes.ok) {
+        const vData = await fallbackRes.json();
+        const latestVersion = (vData.version || '').replace(/^[vV]/, '').trim();
+        if (latestVersion) {
+          return {
+            hasUpdate: compareVersions(latestVersion, currentVersion) > 0,
+            latestVersion,
+            currentVersion,
+            releaseTitle: vData.title || `Version ${latestVersion}`,
+            releaseNotes: vData.notes || 'Bug fixes and performance improvements.',
+            apkDownloadUrl: vData.downloadUrl || null,
+            htmlUrl: vData.htmlUrl || `https://github.com/${GITHUB_REPO}/releases`,
+            publishedAt: vData.publishedAt || '',
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return null;
   } catch (error) {
     return null;
   }
