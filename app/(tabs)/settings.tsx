@@ -4,6 +4,7 @@ import { Header } from '@/components/ui/Header';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { SettingPicker } from '@/components/ui/SettingPicker';
 import { QuranSettingsSheet } from '@/components/quran/QuranSettingsSheet';
+import { PrayerAlarmModal } from '@/components/prayer/PrayerAlarmModal';
 import { useAppTheme } from '@/context/AppThemeContext';
 import { Theme } from '@/constants/Theme';
 import {
@@ -21,6 +22,7 @@ import { useQuranSettings } from '@/hooks/useQuranSettings';
 import {
   requestNotificationPermission,
   scheduleOfflinePrayerAlarms,
+  scheduleTestAlarm,
 } from '@/services/prayerNotifications';
 import { useLabels } from '@/utils/labels';
 import { shadowStyle } from '@/utils/shadow';
@@ -43,6 +45,7 @@ export default function SettingsScreen() {
   const { t } = useLabels();
   const [picker, setPicker] = useState<PickerKey>(null);
   const [showQuranSettings, setShowQuranSettings] = useState(false);
+  const [showPrayerAlarms, setShowPrayerAlarms] = useState(false);
   const [isSyncingAlarms, setIsSyncingAlarms] = useState(false);
 
   const syncPercent =
@@ -157,6 +160,13 @@ export default function SettingsScreen() {
         {/* PRAYER TIMES & ALARMS */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PRAYER ALARMS & ADHAN (OFFLINE)</Text>
         <View style={[styles.group, { backgroundColor: colors.surface, borderColor: colors.border }, cardShadow(colors)]}>
+          <SettingNav
+            icon="alarm"
+            title="Configure All Prayer & Tahajjud Alarms"
+            value="Custom times, Adhan & loud alarms"
+            onPress={() => setShowPrayerAlarms(true)}
+          />
+          <Divider color={colors.border} />
           <SettingToggle
             icon="notifications-outline"
             title={t('prayerNotifications')}
@@ -197,6 +207,25 @@ export default function SettingsScreen() {
             value={settings.adhanSound}
             onChange={(v) => updateSettings({ adhanSound: v })}
             disabled={!settings.prayerNotifications}
+          />
+          <Divider color={colors.border} />
+          <SettingNav
+            icon="play-outline"
+            title="🔔 Test Device Alarm Now (3s)"
+            value="Test audio & vibration trigger"
+            onPress={async () => {
+              if (Platform.OS === 'web') {
+                Alert.alert('Web Mode', 'Test alarm is supported on mobile.');
+                return;
+              }
+              const granted = await requestNotificationPermission();
+              if (!granted) {
+                Alert.alert('Permission Required', 'Please enable notification permissions in your device settings.');
+                return;
+              }
+              await scheduleTestAlarm(3, 'alarm');
+              Alert.alert('🔔 Test Alarm Scheduled', 'Alarm will ring with sound & vibration in 3 seconds!');
+            }}
           />
           <Divider color={colors.border} />
           <View style={styles.autoOfflineRow}>
@@ -307,6 +336,12 @@ export default function SettingsScreen() {
       <QuranSettingsSheet
         visible={showQuranSettings}
         onClose={() => setShowQuranSettings(false)}
+      />
+
+      {/* Prayer Alarms Sheet */}
+      <PrayerAlarmModal
+        visible={showPrayerAlarms}
+        onClose={() => setShowPrayerAlarms(false)}
       />
     </View>
   );

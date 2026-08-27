@@ -10,6 +10,8 @@ export type CalculationMethodKey =
   | 'NorthAmerica';
 export type AsrMethodKey = 'Hanafi' | 'Shafi';
 
+export type PrayerAlertMode = 'alarm' | 'adhan' | 'silent' | 'off';
+
 export type AppSettings = {
   language: AppLanguage;
   calculationMethod: CalculationMethodKey;
@@ -27,6 +29,24 @@ export type AppSettings = {
     isha: boolean;
     tahajjud: boolean;
     sunrise: boolean;
+  };
+  prayerAlertModes?: {
+    fajr?: PrayerAlertMode;
+    sunrise?: PrayerAlertMode;
+    dhuhr?: PrayerAlertMode;
+    asr?: PrayerAlertMode;
+    maghrib?: PrayerAlertMode;
+    isha?: PrayerAlertMode;
+    tahajjud?: PrayerAlertMode;
+  };
+  prayerAlertOffsets?: {
+    fajr?: number; // minutes before
+    sunrise?: number;
+    dhuhr?: number;
+    asr?: number;
+    maghrib?: number;
+    isha?: number;
+    tahajjud?: number;
   };
   darkMode: boolean;
 };
@@ -50,6 +70,24 @@ export const DEFAULT_SETTINGS: AppSettings = {
     isha: true,
     tahajjud: true,
     sunrise: false,
+  },
+  prayerAlertModes: {
+    fajr: 'alarm',
+    sunrise: 'off',
+    dhuhr: 'adhan',
+    asr: 'adhan',
+    maghrib: 'adhan',
+    isha: 'adhan',
+    tahajjud: 'alarm',
+  },
+  prayerAlertOffsets: {
+    fajr: 0,
+    sunrise: 0,
+    dhuhr: 0,
+    asr: 0,
+    maghrib: 0,
+    isha: 0,
+    tahajjud: 45,
   },
   darkMode: false,
 };

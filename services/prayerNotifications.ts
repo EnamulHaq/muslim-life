@@ -6,7 +6,7 @@ import {
   PrayerName,
   PrayerTime,
 } from '@/utils/prayerTimes';
-import { AppSettings, DEFAULT_SETTINGS } from '@/hooks/useAppSettings';
+import { AppSettings, DEFAULT_SETTINGS, PrayerAlertMode } from '@/hooks/useAppSettings';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -21,7 +21,7 @@ Notifications.setNotificationHandler({
 const PRAYER_TITLES: Record<string, { en: string; bn: string; descEn: string; descBn: string }> = {
   tahajjud: {
     en: 'Tahajjud (Qiyam al-Layl) Alarm',
-    bn: 'তাহাজ্জুদ নামাজের সময় (কিয়ামুল লাইল)',
+    bn: 'তাহাজ্জুদ নামাজের ওয়াক্ত (কিয়ামুল লাইল)',
     descEn: 'Time for Tahajjud prayer before Fajr. Stand before Allah in the quiet hours.',
     descBn: 'তাহাজ্জুদের সময় হয়েছে। ফজরের আগে নফল নামাজের বিশেষ ফজিলত রয়েছে।',
   },
@@ -38,25 +38,25 @@ const PRAYER_TITLES: Record<string, { en: string; bn: string; descEn: string; de
     descBn: 'সূর্যোদয়ের সময়। ১৫-২০ মিনিট পর ইশরাক নামাজের ওয়াক্ত হবে।',
   },
   dhuhr: {
-    en: 'Dhuhr Prayer Time',
+    en: 'Dhuhr Prayer Time & Adhan',
     bn: 'যোহর নামাজের ওয়াক্ত ও আজান',
     descEn: 'Time for Dhuhr prayer has begun.',
     descBn: 'যোহর নামাজের সময় হয়েছে। জামাতের প্রস্তুতি নিন।',
   },
   asr: {
-    en: 'Asr Prayer Time',
+    en: 'Asr Prayer Time & Adhan',
     bn: 'আসর নামাজের ওয়াক্ত ও আজান',
     descEn: 'Time for Asr prayer has begun.',
     descBn: 'আসর নামাজের সময় হয়েছে।',
   },
   maghrib: {
-    en: 'Maghrib Prayer Time',
+    en: 'Maghrib Prayer Time & Adhan',
     bn: 'মাগরিব নামাজের ওয়াক্ত ও আজান',
     descEn: 'Time for Maghrib prayer & Iftar has begun.',
     descBn: 'মাগরিব নামাজের সময় হয়েছে।',
   },
   isha: {
-    en: 'Isha Prayer Time',
+    en: 'Isha Prayer Time & Adhan',
     bn: 'এশা নামাজের ওয়াক্ত ও আজান',
     descEn: 'Time for Isha & Witr prayer has begun.',
     descBn: 'এশা ও বিতর নামাজের সময় হয়েছে।',
@@ -66,22 +66,80 @@ const PRAYER_TITLES: Record<string, { en: string; bn: string; descEn: string; de
 export async function requestNotificationPermission(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
 
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  if (existing === 'granted') return true;
+  try {
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    if (existing === 'granted') return true;
 
-  const { status } = await Notifications.requestPermissionsAsync({
-    ios: {
-      allowAlert: true,
-      allowBadge: true,
-      allowSound: true,
-    },
-  });
-  return status === 'granted';
+    const { status } = await Notifications.requestPermissionsAsync({
+      ios: {
+        allowAlert: true,
+        allowBadge: true,
+        allowSound: true,
+      },
+    });
+    return status === 'granted';
+  } catch {
+    return false;
+  }
 }
 
 export async function cancelPrayerNotifications(): Promise<void> {
   if (Platform.OS === 'web') return;
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Initializes notification channels on Android with highest priority, loud sound, and vibration
+ */
+export async function setupNotificationChannels(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+
+  try {
+    // 1. Loud Prayer & Tahajjud Alarm Channel
+    await Notifications.setNotificationChannelAsync('prayer-alarm', {
+      name: 'Prayer & Tahajjud Alarms (Loud)',
+      description: 'Loud wakeup alarms with sound and strong vibration for Fajr & Tahajjud',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'default',
+      vibrationPattern: [0, 800, 400, 800, 400, 800, 400, 800],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
+      enableVibrate: true,
+      enableLights: true,
+      lightColor: '#0B5E3C',
+    });
+
+    // 2. Adhan & Prayer Times Notification Channel
+    await Notifications.setNotificationChannelAsync('prayer-adhan', {
+      name: 'Adhan & Prayer Times',
+      description: 'Prayer time notifications with Adhan sound',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'default',
+      vibrationPattern: [0, 500, 250, 500, 250, 500],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
+      enableVibrate: true,
+      enableLights: true,
+      lightColor: '#D4A017',
+    });
+
+    // 3. Silent Notification Channel
+    await Notifications.setNotificationChannelAsync('prayer-silent', {
+      name: 'Silent Prayer Reminders',
+      description: 'Visual prayer reminders without loud alarm audio',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      sound: undefined,
+      vibrationPattern: [0, 250],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: false,
+    });
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -92,33 +150,14 @@ export async function scheduleOfflinePrayerAlarms(
   latitude: number,
   longitude: number,
   settings: AppSettings = DEFAULT_SETTINGS,
-  daysAhead = 14
+  daysAhead = 30
 ): Promise<{ scheduledCount: number }> {
   if (Platform.OS === 'web') return { scheduledCount: 0 };
 
   const granted = await requestNotificationPermission();
   if (!granted) return { scheduledCount: 0 };
 
-  // Setup High Priority Android Channels
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('prayer-adhan', {
-      name: 'Adhan & Prayer Times',
-      importance: Notifications.AndroidImportance.MAX,
-      sound: settings.adhanSound ? 'default' : undefined,
-      vibrationPattern: [0, 500, 250, 500, 250, 500],
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      bypassDnd: true,
-    });
-
-    await Notifications.setNotificationChannelAsync('prayer-alarm', {
-      name: 'Fajr & Tahajjud Alarms',
-      importance: Notifications.AndroidImportance.MAX,
-      sound: 'default',
-      vibrationPattern: [0, 800, 400, 800, 400, 800],
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      bypassDnd: true,
-    });
-  }
+  await setupNotificationChannels();
 
   // Cancel past notifications to avoid duplicates
   await cancelPrayerNotifications();
@@ -143,21 +182,30 @@ export async function scheduleOfflinePrayerAlarms(
     const fajrPrayer = prayers.find((p) => p.name === 'fajr');
 
     // 1. Schedule Tahajjud Alarm if enabled
-    if (settings.tahajjudAlarm && settings.prayerAlerts?.tahajjud !== false && fajrPrayer) {
-      const offsetMs = (settings.tahajjudOffsetMinutes ?? 45) * 60 * 1000;
+    const tahajjudMode: PrayerAlertMode =
+      settings.prayerAlertModes?.tahajjud ??
+      (settings.tahajjudAlarm && settings.prayerAlerts?.tahajjud !== false ? 'alarm' : 'off');
+
+    if (tahajjudMode !== 'off' && fajrPrayer) {
+      const offsetMinutes = settings.prayerAlertOffsets?.tahajjud ?? settings.tahajjudOffsetMinutes ?? 45;
+      const offsetMs = offsetMinutes * 60 * 1000;
       const tahajjudTime = new Date(fajrPrayer.time.getTime() - offsetMs);
 
       if (tahajjudTime > now) {
         const info = PRAYER_TITLES.tahajjud;
+        const channelId =
+          tahajjudMode === 'alarm' ? 'prayer-alarm' : tahajjudMode === 'silent' ? 'prayer-silent' : 'prayer-adhan';
+        const hasSound = tahajjudMode !== 'silent';
+
         await Notifications.scheduleNotificationAsync({
           identifier: `tahajjud-day-${dayOffset}`,
           content: {
             title: `🌙 ${info.en}`,
-            body: `${info.bn} · ${formatTime(tahajjudTime)} (${settings.tahajjudOffsetMinutes ?? 45}m before Fajr)`,
-            sound: true,
+            body: `${info.bn} · ${formatTime(tahajjudTime)} (${offsetMinutes}m before Fajr)`,
+            sound: hasSound,
             priority: Notifications.AndroidNotificationPriority.MAX,
-            ...(Platform.OS === 'android' ? { channelId: 'prayer-alarm' } : {}),
-            data: { type: 'tahajjud', time: tahajjudTime.toISOString() },
+            ...(Platform.OS === 'android' ? { channelId } : {}),
+            data: { type: 'tahajjud', time: tahajjudTime.toISOString(), offsetMinutes },
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -173,13 +221,34 @@ export async function scheduleOfflinePrayerAlarms(
       const isFajr = prayer.name === 'fajr';
       const isSunrise = prayer.name === 'sunrise';
 
-      // Check if this prayer alert is active in settings
-      const isAlertEnabled = settings.prayerAlerts?.[prayer.name as PrayerName] ?? true;
-      if (!isAlertEnabled && (!isFajr || !settings.fajrAlarm)) {
+      // Determine alert mode for this prayer
+      let prayerMode: PrayerAlertMode = settings.prayerAlertModes?.[prayer.name as PrayerName] ?? 'adhan';
+
+      // Check legacy boolean overrides if prayerAlertModes is not explicitly set
+      if (!settings.prayerAlertModes?.[prayer.name as PrayerName]) {
+        const isAlertEnabled = settings.prayerAlerts?.[prayer.name as PrayerName] ?? (isSunrise ? false : true);
+        if (!isAlertEnabled) {
+          prayerMode = 'off';
+        } else if (isFajr && settings.fajrAlarm) {
+          prayerMode = 'alarm';
+        } else if (isSunrise) {
+          prayerMode = 'silent';
+        } else if (!settings.adhanSound) {
+          prayerMode = 'silent';
+        } else {
+          prayerMode = 'adhan';
+        }
+      }
+
+      if (prayerMode === 'off') {
         continue;
       }
 
-      if (prayer.time > now) {
+      // Calculate custom reminder offset
+      const offsetMinutes = settings.prayerAlertOffsets?.[prayer.name as PrayerName] ?? 0;
+      const targetTriggerTime = new Date(prayer.time.getTime() - offsetMinutes * 60 * 1000);
+
+      if (targetTriggerTime > now) {
         const info = PRAYER_TITLES[prayer.name] ?? {
           en: `${prayer.label} Prayer Time`,
           bn: `${prayer.labelBn} নামাজের ওয়াক্ত`,
@@ -187,22 +256,37 @@ export async function scheduleOfflinePrayerAlarms(
           descBn: `${prayer.labelBn} নামাজের সময় হয়েছে`,
         };
 
-        const isAlarmType = isFajr && settings.fajrAlarm;
-        const channelId = isAlarmType ? 'prayer-alarm' : 'prayer-adhan';
+        const channelId =
+          prayerMode === 'alarm' ? 'prayer-alarm' : prayerMode === 'silent' ? 'prayer-silent' : 'prayer-adhan';
+        const hasSound = prayerMode !== 'silent';
+
+        const timingSuffix =
+          offsetMinutes > 0
+            ? ` (${offsetMinutes}m reminder · Prayer at ${formatTime(prayer.time)})`
+            : ` · ${formatTime(prayer.time)}`;
 
         await Notifications.scheduleNotificationAsync({
           identifier: `prayer-${prayer.name}-day-${dayOffset}`,
           content: {
-            title: isFajr ? `🕌 ⏰ ${info.en}` : `🕌 ${info.en}`,
-            body: `${info.bn} · ${formatTime(prayer.time)} — ${info.descBn}`,
-            sound: isSunrise ? false : (settings.adhanSound ?? true),
-            priority: Notifications.AndroidNotificationPriority.HIGH,
+            title: prayerMode === 'alarm' ? `🕌 ⏰ ${info.en}` : `🕌 ${info.en}`,
+            body: `${info.bn}${timingSuffix} — ${info.descBn}`,
+            sound: hasSound,
+            priority:
+              prayerMode === 'alarm'
+                ? Notifications.AndroidNotificationPriority.MAX
+                : Notifications.AndroidNotificationPriority.HIGH,
             ...(Platform.OS === 'android' ? { channelId } : {}),
-            data: { prayer: prayer.name, time: prayer.time.toISOString() },
+            data: {
+              prayer: prayer.name,
+              time: prayer.time.toISOString(),
+              triggerTime: targetTriggerTime.toISOString(),
+              offsetMinutes,
+              mode: prayerMode,
+            },
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: prayer.time,
+            date: targetTriggerTime,
           },
         });
         count++;
@@ -213,12 +297,59 @@ export async function scheduleOfflinePrayerAlarms(
   return { scheduledCount: count };
 }
 
+/**
+ * Triggers an instant test alarm in `seconds` (default 5s) to let the user test sound/vibration
+ */
+export async function scheduleTestAlarm(
+  seconds = 5,
+  mode: PrayerAlertMode = 'alarm'
+): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
+
+  const granted = await requestNotificationPermission();
+  if (!granted) return null;
+
+  await setupNotificationChannels();
+
+  const channelId =
+    mode === 'alarm' ? 'prayer-alarm' : mode === 'silent' ? 'prayer-silent' : 'prayer-adhan';
+  const hasSound = mode !== 'silent';
+
+  return await Notifications.scheduleNotificationAsync({
+    identifier: `test-alarm-${Date.now()}`,
+    content: {
+      title: '⏰ Muslim Life Alarm Test',
+      body: `Test alarm triggered successfully with sound & vibration! Mode: ${mode.toUpperCase()}`,
+      sound: hasSound,
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      ...(Platform.OS === 'android' ? { channelId } : {}),
+      data: { type: 'test' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds,
+      repeats: false,
+    },
+  });
+}
+
+/**
+ * Returns all currently scheduled notification requests
+ */
+export async function getScheduledPrayerAlarms(): Promise<Notifications.NotificationRequest[]> {
+  if (Platform.OS === 'web') return [];
+  try {
+    return await Notifications.getAllScheduledNotificationsAsync();
+  } catch {
+    return [];
+  }
+}
+
 // Backward compatibility alias
 export async function schedulePrayerNotifications(
   prayers: PrayerTime[],
   options?: { playSound?: boolean }
 ): Promise<void> {
-  // If called directly with today's prayers, schedule them
   if (Platform.OS === 'web') return;
   const granted = await requestNotificationPermission();
   if (!granted) return;

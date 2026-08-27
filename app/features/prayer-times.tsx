@@ -5,6 +5,7 @@ import { Header } from '@/components/ui/Header';
 import { PrayerCard } from '@/components/ui/PrayerCard';
 import { ScreenContainer } from '@/components/ui/ScreenContainer';
 import { SectionHeading } from '@/components/ui/SectionHeading';
+import { PrayerAlarmModal } from '@/components/prayer/PrayerAlarmModal';
 import { FORBIDDEN_TIMES, SALAH_GUIDE } from '@/data/salatGuide';
 import { Theme } from '@/constants/Theme';
 import {
@@ -23,6 +24,7 @@ import {
   getForbiddenTimeWindows,
   getHijriDate,
   isInForbiddenTime,
+  PrayerName,
 } from '@/utils/prayerTimes';
 import { scheduleOfflinePrayerAlarms } from '@/services/prayerNotifications';
 
@@ -38,6 +40,9 @@ const TYPE_COLORS: Record<string, string> = {
 export default function PrayerTimesScreen() {
   const [tab, setTab] = useState<Tab>('times');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showAlarmModal, setShowAlarmModal] = useState(false);
+  const [selectedAlarmPrayer, setSelectedAlarmPrayer] = useState<PrayerName | 'tahajjud' | null>(null);
+
   const { settings, updateSettings } = useAppSettings();
   const { location } = useLocation();
   const { prayers, nextPrayer } = usePrayerTimes(location.latitude, location.longitude);
@@ -47,6 +52,11 @@ export default function PrayerTimesScreen() {
   const fardWindows = getFardPrayerWindows(prayers);
   const forbiddenWindows = getForbiddenTimeWindows(prayers);
   const extra = getComputedSalahTimes(prayers);
+
+  const handleOpenAlarmFor = (name: PrayerName | 'tahajjud') => {
+    setSelectedAlarmPrayer(name);
+    setShowAlarmModal(true);
+  };
 
   const handleSyncOffline = async () => {
     if (Platform.OS === 'web') {
@@ -59,11 +69,11 @@ export default function PrayerTimesScreen() {
         location.latitude,
         location.longitude,
         settings,
-        14
+        30
       );
       Alert.alert(
         'Offline Alarms Ready',
-        `Scheduled ${res.scheduledCount} real-time prayer & Tahajjud alarms for the next 14 days!`
+        `Scheduled ${res.scheduledCount} real-time prayer & Tahajjud alarms for the next 30 days!`
       );
     } catch {
       Alert.alert('Error', 'Failed to schedule offline alarms.');
@@ -77,39 +87,63 @@ export default function PrayerTimesScreen() {
       <Header title="Prayer Times" subtitle="নামাজের সময়সূচি" showBack />
       <ScreenContainer>
         <View style={styles.infoCard}>
-          <Text style={styles.location}>
-            📍 {location.city}, {location.country}
-          </Text>
-          <Text style={styles.hijri}>
-            {hijri.day} {hijri.monthBn} {hijri.year} হিজরি
-          </Text>
+          <View style={styles.infoTopRow}>
+            <View style={styles.flex}>
+              <Text style={styles.location}>
+                📍 {location.city}, {location.country}
+              </Text>
+              <Text style={styles.hijri}>
+                {hijri.day} {hijri.monthBn} {hijri.year} হিজরি
+              </Text>
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.alarmManageBtn, pressed && { opacity: 0.8 }]}
+              onPress={() => handleOpenAlarmFor('fajr')}
+            >
+              <Ionicons name="alarm" size={18} color="#FFF" />
+              <Text style={styles.alarmManageBtnText}>Alarms & Times</Text>
+            </Pressable>
+          </View>
+
           <Text style={styles.method}>
             {CALCULATION_METHODS[settings.calculationMethod as CalculationMethodKey] ?? ''} · {ASR_METHODS[settings.asrMethod as AsrMethodKey] ?? ''} Asr
           </Text>
 
-          {/* Alarm Status Pills */}
+          {/* Alarm Status Pills (Clickable) */}
           <View style={styles.alarmStatusRow}>
-            <View style={styles.alarmPill}>
-              <Ionicons name="alarm" size={14} color={Theme.colors.accent} />
+            <Pressable
+              style={styles.alarmPill}
+              onPress={() => handleOpenAlarmFor('tahajjud')}
+            >
+              <Ionicons name="moon" size={14} color={Theme.colors.accent} />
               <Text style={styles.alarmPillText}>
-                Tahajjud: {settings.tahajjudAlarm ? `On (${settings.tahajjudOffsetMinutes ?? 45}m pre-Fajr)` : 'Off'}
+                Tahajjud: {settings.prayerAlertModes?.tahajjud !== 'off' ? `On (${settings.prayerAlertOffsets?.tahajjud ?? settings.tahajjudOffsetMinutes ?? 45}m pre-Fajr)` : 'Off'}
               </Text>
-            </View>
-            <View style={styles.alarmPill}>
-              <Ionicons name="sunny" size={14} color={Theme.colors.primary} />
+              <Ionicons name="create-outline" size={12} color={Theme.colors.textSecondary} />
+            </Pressable>
+            <Pressable
+              style={styles.alarmPill}
+              onPress={() => handleOpenAlarmFor('fajr')}
+            >
+              <Ionicons name="alarm" size={14} color={Theme.colors.primary} />
               <Text style={styles.alarmPillText}>
-                Fajr Alarm: {settings.fajrAlarm ? 'On' : 'Off'}
+                Fajr: {settings.prayerAlertModes?.fajr ?? (settings.fajrAlarm ? 'alarm' : 'adhan')}
               </Text>
-            </View>
+              <Ionicons name="create-outline" size={12} color={Theme.colors.textSecondary} />
+            </Pressable>
           </View>
 
           {/* 30-day Automatic Offline Alarms Badge */}
-          <View style={styles.autoStatusWrap}>
+          <Pressable
+            style={styles.autoStatusWrap}
+            onPress={() => handleOpenAlarmFor('fajr')}
+          >
             <Ionicons name="checkmark-circle" size={16} color={Theme.colors.success} />
             <Text style={styles.autoStatusText}>
-              Offline Alarms Active: 30 days automatically scheduled with Adhan & Tahajjud
+              Offline Alarms Active: 30 days scheduled with exact custom times & Adhan
             </Text>
-          </View>
+            <Ionicons name="chevron-forward" size={16} color={Theme.colors.textSecondary} />
+          </Pressable>
 
           {forbiddenNow ? (
             <View style={styles.forbiddenNow}>
@@ -139,12 +173,18 @@ export default function PrayerTimesScreen() {
           <>
             {prayers.map((prayer) => {
               const window = fardWindows.find((w) => w.name === prayer.name);
+              const prayerMode = settings.prayerAlertModes?.[prayer.name] ?? 'adhan';
+              const offsetMinutes = settings.prayerAlertOffsets?.[prayer.name] ?? 0;
+
               return (
                 <View key={prayer.name}>
                   <PrayerCard
                     prayer={prayer}
                     isNext={nextPrayer?.name === prayer.name}
                     isActive={nextPrayer?.name === prayer.name}
+                    alarmMode={prayerMode}
+                    offsetMinutes={offsetMinutes}
+                    onAlarmPress={() => handleOpenAlarmFor(prayer.name)}
                   />
                   {window && prayer.name !== 'sunrise' ? (
                     <View style={styles.windowCard}>
@@ -223,6 +263,16 @@ export default function PrayerTimesScreen() {
           </>
         )}
       </ScreenContainer>
+
+      <PrayerAlarmModal
+        visible={showAlarmModal}
+        selectedPrayerName={selectedAlarmPrayer}
+        prayers={prayers}
+        onClose={() => {
+          setShowAlarmModal(false);
+          setSelectedAlarmPrayer(null);
+        }}
+      />
     </View>
   );
 }
@@ -236,6 +286,27 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.md,
     borderWidth: 1,
     borderColor: Theme.colors.border,
+  },
+  infoTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  flex: { flex: 1 },
+  alarmManageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: Theme.borderRadius.full,
+    gap: 6,
+  },
+  alarmManageBtnText: {
+    color: '#FFF',
+    fontSize: Theme.fontSize.xs,
+    fontWeight: '700',
   },
   location: { fontSize: Theme.fontSize.lg, fontWeight: '600', color: Theme.colors.text },
   hijri: { fontSize: Theme.fontSize.md, color: Theme.colors.primary, marginTop: 4 },

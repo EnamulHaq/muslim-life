@@ -38,6 +38,8 @@ export function usePrayerNotifications() {
     settings.calculationMethod,
     settings.asrMethod,
     settings.prayerAlerts,
+    settings.prayerAlertModes,
+    settings.prayerAlertOffsets,
     location.latitude,
     location.longitude,
   ]);

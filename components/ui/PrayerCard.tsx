@@ -1,15 +1,29 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Theme } from '@/constants/Theme';
 import { formatTime, PrayerTime } from '@/utils/prayerTimes';
 import { shadowStyle } from '@/utils/shadow';
+import { PrayerAlertMode } from '@/hooks/useAppSettings';
 
 type Props = {
   prayer: PrayerTime;
   isActive?: boolean;
   isNext?: boolean;
+  alarmMode?: PrayerAlertMode;
+  offsetMinutes?: number;
+  onAlarmPress?: () => void;
 };
 
-export function PrayerCard({ prayer, isActive, isNext }: Props) {
+export function PrayerCard({
+  prayer,
+  isActive,
+  isNext,
+  alarmMode = 'adhan',
+  offsetMinutes = 0,
+  onAlarmPress,
+}: Props) {
+  const isAlarmOn = alarmMode !== 'off';
+
   return (
     <View
       style={[
@@ -20,14 +34,56 @@ export function PrayerCard({ prayer, isActive, isNext }: Props) {
       ]}
     >
       <View style={styles.info}>
-        <Text style={[styles.name, isActive && styles.nameActive]}>{prayer.label}</Text>
-        <Text style={[styles.nameBn, isActive && styles.nameBnActive]}>{prayer.labelBn}</Text>
-      </View>
-      <Text style={[styles.time, isActive && styles.timeActive]}>{formatTime(prayer.time)}</Text>
-      {isNext && (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>Next</Text>
+        <View style={styles.nameRow}>
+          <Text style={[styles.name, isActive && styles.nameActive]}>{prayer.label}</Text>
+          {isNext && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>Next</Text>
+            </View>
+          )}
         </View>
+        <Text style={[styles.nameBn, isActive && styles.nameBnActive]}>{prayer.labelBn}</Text>
+        {offsetMinutes > 0 && isAlarmOn && (
+          <Text style={[styles.offsetTag, isActive && { color: Theme.colors.accentLight }]}>
+            🔔 Alert: {offsetMinutes}m before
+          </Text>
+        )}
+      </View>
+
+      <Text style={[styles.time, isActive && styles.timeActive]}>{formatTime(prayer.time)}</Text>
+
+      {onAlarmPress && (
+        <Pressable
+          style={({ pressed }) => [
+            styles.alarmBtn,
+            isAlarmOn ? (isActive ? styles.alarmBtnActiveOn : styles.alarmBtnOn) : styles.alarmBtnOff,
+            pressed && { opacity: 0.7 },
+          ]}
+          onPress={onAlarmPress}
+          hitSlop={8}
+        >
+          <Ionicons
+            name={
+              alarmMode === 'alarm'
+                ? 'alarm'
+                : alarmMode === 'adhan'
+                ? 'volume-high'
+                : alarmMode === 'silent'
+                ? 'notifications'
+                : 'notifications-off-outline'
+            }
+            size={18}
+            color={
+              isAlarmOn
+                ? isActive
+                  ? '#FFF'
+                  : Theme.colors.primary
+                : isActive
+                ? 'rgba(255,255,255,0.4)'
+                : Theme.colors.textSecondary
+            }
+          />
+        </Pressable>
       )}
     </View>
   );
@@ -84,10 +140,35 @@ const styles = StyleSheet.create({
   timeActive: {
     color: Theme.colors.accentLight,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  offsetTag: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Theme.colors.primary,
+    marginTop: 2,
+  },
+  alarmBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: Theme.borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: Theme.spacing.sm,
+  },
+  alarmBtnOn: {
+    backgroundColor: Theme.colors.primary + '18',
+  },
+  alarmBtnActiveOn: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  alarmBtnOff: {
+    backgroundColor: 'transparent',
+  },
   badge: {
-    position: 'absolute',
-    top: 6,
-    right: 8,
     backgroundColor: Theme.colors.accent,
     paddingHorizontal: 6,
     paddingVertical: 2,
